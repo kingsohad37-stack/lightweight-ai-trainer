@@ -10,8 +10,8 @@
   <header class="top">
     <div>
       <div class="eyebrow">LIGHTWEIGHT AI TRAINER</div>
-      <h1>Train real ML models from your browser.</h1>
-      <p class="sub">Upload a dataset, create a training plan, train, predict, generate text, use AI providers, and download your trained model.</p>
+      <h1>Train, test and chat with your own models.</h1>
+      <p class="sub">Upload data, create a training plan, name your model, train it, test it, chat with language models, and download the trained package.</p>
     </div>
     <span id="health" class="pill">Checking API…</span>
   </header>
@@ -34,14 +34,16 @@
 
     <section class="card">
       <h2>2. Describe what you want to train</h2>
-      <textarea id="prompt" placeholder="Example: Train a classification model to predict the label column from the text column."></textarea>
+      <textarea id="prompt" placeholder="Example: Train a classification model to predict the label column from the text column. For a chatbot-style model, describe that you want conversational text generation."></textarea>
       <button onclick="makePlan()">Create AI training plan</button>
       <pre id="planResult">No plan yet.</pre>
     </section>
 
     <section class="card">
-      <h2>3. Start training</h2>
-      <textarea id="config" placeholder="Paste the generated training config JSON here"></textarea>
+      <h2>3. Name and start training</h2>
+      <input id="modelName" type="text" maxlength="120" placeholder="Model / experiment name (e.g. my-assistant-v1)">
+      <p class="sub">The name is applied to the training configuration before the job starts.</p>
+      <textarea id="config" placeholder="The generated training config appears here. You can review or edit it before training."></textarea>
       <button onclick="startTraining()">Start training</button>
       <div id="jobBox" class="job hidden">
         <div class="jobhead"><b id="jobStatus">Queued</b><span id="jobId"></span></div>
@@ -51,7 +53,7 @@
 
     <section class="card">
       <h2>4. Predict</h2>
-      <input id="predictExperiment" type="text" placeholder="Experiment name (e.g. experiment)">
+      <input id="predictExperiment" type="text" placeholder="Experiment name">
       <textarea id="predictRecords" placeholder='Paste input records as a JSON array, e.g. [{"text":"What is the largest planet?"}]'></textarea>
       <button onclick="runPrediction()">Predict</button>
       <pre id="predictResult">No prediction yet.</pre>
@@ -59,7 +61,7 @@
 
     <section class="card">
       <h2>5. Generate text</h2>
-      <p class="sub">Only language-model experiments can generate text. Classification/regression models will now return a clear message instead of a server error.</p>
+      <p class="sub">Only language-model experiments can generate text. A classifier/regressor cannot be converted into a language model after training.</p>
       <input id="generateExperiment" type="text" placeholder="Language-model experiment name">
       <textarea id="generatePrompt" placeholder="Prompt text"></textarea>
       <button onclick="runGeneration()">Generate</button>
@@ -67,7 +69,20 @@
     </section>
 
     <section class="card">
-      <h2>6. External AI provider</h2>
+      <h2>6. Chat with your trained model</h2>
+      <p class="sub">This uses the trained tiny-transformer checkpoint and keeps the conversation history for the current chat.</p>
+      <input id="chatExperiment" type="text" placeholder="Language-model experiment name">
+      <div id="chatMessages" class="chat" aria-live="polite"></div>
+      <textarea id="chatInput" placeholder="Message your model…" onkeydown="handleChatKey(event)"></textarea>
+      <div class="row">
+        <button onclick="sendChat()">Send</button>
+        <button class="secondary" onclick="clearChat()">Clear chat</button>
+      </div>
+      <pre id="chatResult">No conversation yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>7. External AI provider</h2>
       <p class="sub">Use a server-side Render key or supply a key for this request. Keys are not saved by the app.</p>
       <select id="aiProvider">
         <option value="auto">Auto / server default</option>
@@ -84,7 +99,7 @@
     </section>
 
     <section class="card">
-      <h2>7. Download trained model</h2>
+      <h2>8. Download trained model</h2>
       <p class="sub">Downloads the latest checkpoint, model weights, tokenizer/preprocessor state, metadata, and training configuration as a ZIP.</p>
       <input id="downloadExperiment" type="text" placeholder="Experiment name">
       <button onclick="downloadModel()">Download trained model</button>
