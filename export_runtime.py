@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import json
 import tempfile
 import zipfile
@@ -18,6 +17,26 @@ app = server.app
 _root_mount = getattr(server, "_root_mount", None)
 if _root_mount is not None and _root_mount in app.router.routes:
     app.router.routes.remove(_root_mount)
+
+# Re-register dataset generation explicitly at runtime. This removes any
+# duplicate/stale route definitions inherited from the bundled trainer and
+# guarantees both supported POST endpoints resolve to the same handler.
+for route in list(app.router.routes):
+    if getattr(route, "path", None) in {"/api/ai/dataset", "/api/ai/dataset/generate"}:
+        app.router.routes.remove(route)
+
+app.router.add_api_route(
+    "/api/ai/dataset",
+    server.generate_dataset,
+    methods=["POST"],
+    dependencies=[Depends(server.original.require_api_key)],
+)
+app.router.add_api_route(
+    "/api/ai/dataset/generate",
+    server.generate_dataset,
+    methods=["POST"],
+    dependencies=[Depends(server.original.require_api_key)],
+)
 
 # Replace server.py's checkpoint-only download with a self-contained export.
 for route in list(app.routes):
