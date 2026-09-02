@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent
 DEST = ROOT / "trainer"
 ZIP = ROOT / "trainer.zip"
 OVERRIDES = ROOT / "web-overrides"
-LOCAL_MODEL = Path("/opt/local-model")
+LOCAL_MODEL = ROOT / ".local-model"
 LOCAL_MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
 if not ZIP.is_file():
@@ -46,12 +46,11 @@ required = DEST / "requirements-web.txt"
 if not required.is_file():
     raise RuntimeError("Trainer extraction failed: trainer/requirements-web.txt not found")
 
-# The existing Render service is Python, not Docker. Install a CPU-only
-# PyTorch build first so Render does not pull several GB of unused CUDA wheels.
+# The existing Render service is Python, not Docker. Install CPU-only PyTorch
+# so the local key-free dataset creator works without pulling CUDA packages.
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "--no-cache-dir",
-    "--index-url", "https://download.pytorch.org/whl/cpu",
-    "torch>=2.4,<3",
+    "--index-url", "https://download.pytorch.org/whl/cpu", "torch>=2.4,<3",
 ])
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "--no-cache-dir",
