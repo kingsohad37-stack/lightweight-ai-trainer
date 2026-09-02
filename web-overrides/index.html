@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lightweight AI Trainer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="eyebrow">LIGHTWEIGHT AI TRAINER</div>
+      <h1>Train real ML models from your browser.</h1>
+      <p class="sub">Upload a dataset, create a training plan, train, predict, generate text, use AI providers, and download your trained model.</p>
+    </div>
+    <span id="health" class="pill">Checking API…</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Connection</h2>
+      <p class="sub">Only needed when the server has TRAINER_API_KEY configured.</p>
+      <input id="apiKey" type="password" autocomplete="off" placeholder="Trainer API key (optional)">
+    </section>
+
+    <section class="card">
+      <h2>1. Upload dataset</h2>
+      <div class="upload">
+        <input id="dataset" type="file" accept=".csv,.tsv,.json,.jsonl,.txt">
+        <button onclick="uploadDataset()">Upload</button>
+      </div>
+      <pre id="uploadResult">No dataset uploaded.</pre>
+    </section>
+
+    <section class="card">
+      <h2>2. Describe what you want to train</h2>
+      <textarea id="prompt" placeholder="Example: Train a classification model to predict the label column from the text column."></textarea>
+      <button onclick="makePlan()">Create AI training plan</button>
+      <pre id="planResult">No plan yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>3. Start training</h2>
+      <textarea id="config" placeholder="Paste the generated training config JSON here"></textarea>
+      <button onclick="startTraining()">Start training</button>
+      <div id="jobBox" class="job hidden">
+        <div class="jobhead"><b id="jobStatus">Queued</b><span id="jobId"></span></div>
+        <pre id="jobResult"></pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Predict</h2>
+      <input id="predictExperiment" type="text" placeholder="Experiment name (e.g. experiment)">
+      <textarea id="predictRecords" placeholder='Paste input records as a JSON array, e.g. [{"text":"What is the largest planet?"}]'></textarea>
+      <button onclick="runPrediction()">Predict</button>
+      <pre id="predictResult">No prediction yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>5. Generate text</h2>
+      <p class="sub">Only language-model experiments can generate text. Classification/regression models will now return a clear message instead of a server error.</p>
+      <input id="generateExperiment" type="text" placeholder="Language-model experiment name">
+      <textarea id="generatePrompt" placeholder="Prompt text"></textarea>
+      <button onclick="runGeneration()">Generate</button>
+      <pre id="generateResult">Train a tiny transformer language model first.</pre>
+    </section>
+
+    <section class="card">
+      <h2>6. External AI provider</h2>
+      <p class="sub">Use a server-side Render key or supply a key for this request. Keys are not saved by the app.</p>
+      <select id="aiProvider">
+        <option value="auto">Auto / server default</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="groq">Groq</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">Custom OpenAI-compatible</option>
+      </select>
+      <input id="aiModel" type="text" placeholder="Model (optional)">
+      <input id="aiKey" type="password" autocomplete="off" placeholder="Provider API key (optional)">
+      <textarea id="aiPrompt" placeholder="Ask Gemini, Groq, OpenAI, or your compatible provider anything..."></textarea>
+      <button onclick="runAI()">Run AI</button>
+      <pre id="aiResult">No external AI request yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>7. Download trained model</h2>
+      <p class="sub">Downloads the latest checkpoint, model weights, tokenizer/preprocessor state, metadata, and training configuration as a ZIP.</p>
+      <input id="downloadExperiment" type="text" placeholder="Experiment name">
+      <button onclick="downloadModel()">Download trained model</button>
+      <pre id="downloadResult">No download requested yet.</pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
