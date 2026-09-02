@@ -36,7 +36,8 @@ with zipfile.ZipFile(ZIP) as archive:
             shutil.copyfileobj(src, dst)
 
 web = DEST / "web"
-for filename in ("index.html", "app.js", "styles.css"):
+# Copy every web override, including the automatic two-step workflow assets.
+for filename in ("index.html", "app.js", "styles.css", "auto.js", "auto.css"):
     source = OVERRIDES / filename
     if source.is_file():
         web.mkdir(parents=True, exist_ok=True)
