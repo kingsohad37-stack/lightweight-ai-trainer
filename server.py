@@ -18,7 +18,7 @@ from trainer.api import main as original
 app = original.app
 
 # Remove the original root static mount temporarily so our API routes stay
-# ahead of it in Starlette's route order. Re-add it after the extensions.
+ahead of it in Starlette's route order. Re-add it after the extensions.
 _root_mount = None
 for route in list(app.routes):
     if getattr(route, "path", None) == "/" and hasattr(route, "app"):
@@ -151,6 +151,7 @@ def _extract_json_array(text: str) -> list[dict]:
 
 
 @original.app.post("/api/ai/dataset", dependencies=[Depends(original.require_api_key)])
+@original.app.post("/api/ai/dataset/generate", dependencies=[Depends(original.require_api_key)])
 def generate_dataset(request: DatasetGenerateRequest):
     """Generate a training-ready dataset with the dedicated dataset Gemini key.
 
@@ -256,82 +257,12 @@ def generate_text(request: original.GenerateRequest):
         generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
         continuation_ids = generated_ids[len(prompt_ids):]
         text = tokenizer.decode(continuation_ids)
-        return {"experiment": name, "prompt": request.prompt, "text": text, "epoch": metadata.get("epoch")}
+        return {"experiment": name, "text": text, "epoch": metadata.get("epoch")}
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(500, f"Text generation failed: {exc}") from exc
+        raise HTTPException(500, f"Generation failed: {exc}") from exc
 
 
-class ChatMessage(BaseModel):
-    role: str = Field(min_length=1, max_length=20)
-    content: str = Field(min_length=1, max_length=12_000)
-
-
-class ChatRequest(BaseModel):
-    experiment: str = Field(min_length=1, max_length=120)
-    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
-    max_new_tokens: int = Field(default=160, ge=1, le=1024)
-    temperature: float = Field(default=0.8, gt=0, le=2)
-    epoch: Optional[int] = Field(default=None, ge=0)
-
-
-def _chat_prompt(messages: list[ChatMessage]) -> str:
-    lines = []
-    for message in messages:
-        role = message.role.strip().lower()
-        label = "System" if role == "system" else "Assistant" if role == "assistant" else "User"
-        lines.append(f"{label}: {message.content.strip()}")
-    lines.append("Assistant:")
-    return "\n".join(lines)
-
-
-@original.app.post("/api/chat", dependencies=[Depends(original.require_api_key)])
-def chat(request: ChatRequest):
-    """Run a multi-turn conversation against a tiny-transformer LM."""
-    from trainer.algorithms.transformer import TinyTransformer
-    from trainer.tokenizers.char_tokenizer import CharTokenizer
-    from trainer.training.checkpoint import CheckpointManager
-
-    try:
-        name = original._safe_name(request.experiment)
-        manager = CheckpointManager(str(original.MODEL_ROOT), name)
-        checkpoint = manager.load_epoch(request.epoch) if request.epoch else manager.load_latest()
-        if not checkpoint:
-            raise HTTPException(404, "No trained checkpoint found for this experiment.")
-
-        metadata = checkpoint.get("metadata", {})
-        if metadata.get("algorithm") != "tiny_transformer":
-            raise HTTPException(400, "Chat requires a language-model training run (task=language_modeling, algorithm=tiny_transformer).")
-
-        transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
-        tokenizer_state = checkpoint.get("preprocessor_state")
-        if not transformer_state or not tokenizer_state:
-            raise HTTPException(400, "This language-model checkpoint is incomplete: transformer/tokenizer state is missing.")
-
-        model = TinyTransformer.from_state(transformer_state)
-        tokenizer = CharTokenizer.from_state(tokenizer_state)
-        prompt = _chat_prompt(request.messages)
-        prompt_ids = tokenizer.encode(prompt)
-        generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
-        continuation_ids = generated_ids[len(prompt_ids):]
-        text = tokenizer.decode(continuation_ids)
-        for marker in ("\nUser:", "\nSystem:", "\nAssistant:"):
-            if marker in text:
-                text = text.split(marker, 1)[0]
-        text = text.strip()
-        return {
-            "experiment": name,
-            "text": text,
-            "messages": [{"role": "assistant", "content": text}],
-            "epoch": metadata.get("epoch"),
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(500, f"Chat failed: {exc}") from exc
-
-
-# Restore the static root mount after all API routes.
 if _root_mount is not None:
     app.router.routes.append(_root_mount)
