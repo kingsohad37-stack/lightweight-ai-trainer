@@ -11,7 +11,7 @@ async function api(path, options={}) {
   const text = await r.text();
   let data;
   try { data = JSON.parse(text); } catch { data = {raw:text}; }
-  if (!r.ok) throw new Error(data.detail || data.raw || `HTTP ${r.status}`);
+  if(!r.ok) throw new Error(data.detail || data.raw || `HTTP ${r.status}`);
   return data;
 }
 
@@ -45,7 +45,7 @@ async function uploadGeneratedDataset(data, resultElement){
   const analysis = await api('/api/datasets/analyze?dataset_id='+encodeURIComponent(uploaded.dataset_id),{method:'POST'});
   resultElement.textContent = `Generated ${data.rows} rows and loaded them into the trainer.\n\nDATASET\n${JSON.stringify(uploaded,null,2)}\n\nANALYSIS\n${JSON.stringify(analysis.analysis,null,2)}`;
   $('uploadResult').textContent = resultElement.textContent;
-  $('planResult').textContent = 'AI dataset ready. Describe your training goal above, then create the training plan.';
+  $('planResult').textContent = 'AI dataset ready. Describe a training goal above, then create the training plan.';
 }
 
 async function generateDataset(bottom=false){
@@ -57,14 +57,13 @@ async function generateDataset(bottom=false){
   const result = $(`datasetAIResult${suffix}`);
   if(!topic) return alert('Describe what the AI-generated dataset should teach.');
   if(!columns) return alert('Enter the dataset columns.');
-  result.textContent = 'Generating dataset with Gemini…';
+  result.textContent = 'Generating dataset with the local model…';
   try {
     const payload = {topic, columns, rows, format};
     let data;
     try {
       data = await api('/api/ai/dataset/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     } catch(e) {
-      // Compatibility fallback for an older deployed server route.
       data = await api('/api/ai/dataset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     }
     await uploadGeneratedDataset(data, result);
@@ -102,8 +101,7 @@ async function startTraining(){
 
 async function pollJob(id){
   try {
-    const data = await api('/api/training/'+encodeURIComponent(id));
-    $('jobStatus').textContent = data.status; $('jobResult').textContent = JSON.stringify(data,null,2);
+    const data = await api('/api/training/'+encodeURIComponent(id)); $('jobStatus').textContent = data.status; $('jobResult').textContent = JSON.stringify(data,null,2);
     if(data.status === 'queued' || data.status === 'running') setTimeout(()=>pollJob(id),1000);
     else if(data.status === 'completed'){
       const rec = data.result && data.result.experiment_record;
