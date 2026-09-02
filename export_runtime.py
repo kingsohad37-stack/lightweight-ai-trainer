@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 import server
+import local_dataset_model
 from trainer.training.checkpoint import CheckpointManager
 
 app = server.app
@@ -18,30 +19,25 @@ _root_mount = getattr(server, "_root_mount", None)
 if _root_mount is not None and _root_mount in app.router.routes:
     app.router.routes.remove(_root_mount)
 
-# Re-register dataset generation explicitly at runtime. Some versions of the
-# bundled trainer expose the same paths through a GET/static route. Starlette
-# stops at the first matching path and returns 405 instead of continuing to a
-# later POST route, so the dataset POST routes must be placed FIRST.
+# Replace the bundled trainer's dataset routes with the local open-source
+# model implementation. This requires no provider API key.
 for route in list(app.router.routes):
     if getattr(route, "path", None) in {"/api/ai/dataset", "/api/ai/dataset/generate"}:
         app.router.routes.remove(route)
 
 app.router.add_api_route(
     "/api/ai/dataset/generate",
-    server.generate_dataset,
+    local_dataset_model.generate_dataset,
     methods=["POST"],
     dependencies=[Depends(server.original.require_api_key)],
 )
 app.router.add_api_route(
     "/api/ai/dataset",
-    server.generate_dataset,
+    local_dataset_model.generate_dataset,
     methods=["POST"],
     dependencies=[Depends(server.original.require_api_key)],
 )
 
-# FastAPI's add_api_route() does not return the created route. Find the newly
-# registered routes explicitly before moving them to the front; inserting the
-# return value would insert None and crash every request in Starlette.
 _dataset_routes = [
     route for route in app.router.routes
     if getattr(route, "path", None) in {"/api/ai/dataset", "/api/ai/dataset/generate"}
@@ -79,8 +75,6 @@ def download_experiment(experiment: str):
     launcher = root / "run_chat.py"
     runtime_requirements = root / "requirements-runtime.txt"
 
-    # Build on a temporary file instead of holding a potentially large model
-    # export entirely in RAM.
     temp = tempfile.NamedTemporaryFile(prefix=f"{name}-export-", suffix=".zip", dir=str(server.original.MODEL_ROOT), delete=False)
     temp_path = Path(temp.name)
     temp.close()
