@@ -7,21 +7,28 @@ import os
 from pathlib import Path
 from typing import Any
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
 import server
 
 MODEL_DIR = os.environ.get("LOCAL_MODEL_DIR", str(Path(__file__).resolve().parent / ".local-model"))
 _MODEL = None
 _TOKENIZER = None
+_TORCH = None
 
 
 def _load_model():
-    global _MODEL, _TOKENIZER
+    global _MODEL, _TOKENIZER, _TORCH
     if _MODEL is None or _TOKENIZER is None:
+        # Keep the web server startup lightweight. The ML stack is loaded only
+        # when the local dataset endpoint is actually used, otherwise Render's
+        # port scanner can race a slow transformers/torch import.
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except Exception as exc:
+            raise server.HTTPException(503, f"The local dataset model runtime could not be loaded: {exc}") from exc
         if not os.path.isdir(MODEL_DIR):
             raise server.HTTPException(503, "The local dataset model is not installed on this server yet. Rebuild the service and try again.")
+        _TORCH = torch
         _TOKENIZER = AutoTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)
         _MODEL = AutoModelForCausalLM.from_pretrained(
             MODEL_DIR, local_files_only=True, torch_dtype=torch.float32, low_cpu_mem_usage=True
@@ -29,7 +36,7 @@ def _load_model():
         _MODEL.eval()
         if _TOKENIZER.pad_token_id is None:
             _TOKENIZER.pad_token = _TOKENIZER.eos_token
-    return _MODEL, _TOKENIZER
+    return _MODEL, _TOKENIZER, _TORCH
 
 
 def _extract_json_array(text: str) -> list[dict[str, Any]]:
@@ -45,7 +52,7 @@ def _extract_json_array(text: str) -> list[dict[str, Any]]:
     return value
 
 
-def _generate_batch(model, tokenizer, topic: str, columns: list[str], rows: int) -> list[dict[str, Any]]:
+def _generate_batch(model, tokenizer, torch, topic: str, columns: list[str], rows: int) -> list[dict[str, Any]]:
     prompt = (
         "You are a synthetic training-data generator. "
         f"Create exactly {rows} realistic, varied records about {topic!r}. "
@@ -72,7 +79,7 @@ def generate_dataset(request: server.DatasetGenerateRequest):
     columns = [c.strip() for c in request.columns.split(",") if c.strip()]
     if not columns:
         raise server.HTTPException(400, "Enter at least one column name.")
-    model, tokenizer = _load_model()
+    model, tokenizer, torch = _load_model()
     records: list[dict[str, str]] = []
     batch_size = 20
     attempts = 0
@@ -80,7 +87,7 @@ def generate_dataset(request: server.DatasetGenerateRequest):
         attempts += 1
         wanted = min(batch_size, request.rows - len(records))
         try:
-            batch = _generate_batch(model, tokenizer, request.topic, columns, wanted)
+            batch = _generate_batch(model, tokenizer, torch, request.topic, columns, wanted)
         except Exception:
             continue
         for row in batch:
