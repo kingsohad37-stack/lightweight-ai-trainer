@@ -55,6 +55,7 @@ subprocess.check_call([
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "--no-cache-dir",
     "transformers>=4.56,<5", "safetensors>=0.5,<1", "huggingface_hub>=0.30,<2",
+    "httpx>=0.27,<1",
 ])
 LOCAL_MODEL.mkdir(parents=True, exist_ok=True)
 from huggingface_hub import snapshot_download
