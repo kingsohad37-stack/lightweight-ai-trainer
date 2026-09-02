@@ -3,7 +3,10 @@
   const $ = (id) => document.getElementById(id);
   if (!$('autoPrompt') || !$('autoBuild')) return;
   const api = async (path, options = {}) => {
-    const r = await fetch(path, {headers: {'Content-Type':'application/json', ...(options.headers||{})}, ...options});
+    const key = $('apiKey') && $('apiKey').value.trim();
+    const headers = {'Content-Type':'application/json', ...(options.headers||{})};
+    if (key) headers['X-API-Key'] = key;
+    const r = await fetch(path, {...options, headers});
     const text = await r.text();
     let data; try { data = text ? JSON.parse(text) : {}; } catch { data = {detail:text}; }
     if (!r.ok) throw new Error(data.detail || data.error || `Request failed (${r.status})`);
@@ -22,7 +25,7 @@
       result(JSON.stringify(plan.plan || plan, null, 2));
       status('Building dataset and training model…');
       const job = await api('/api/auto/build', {method:'POST', body:JSON.stringify({description:prompt, plan:plan.plan || plan})});
-      let id = job.job_id;
+      const id = job.job_id;
       while (id) {
         const s = await api('/api/auto/status/' + encodeURIComponent(id));
         status(s.message || s.status || 'Working…');
@@ -30,6 +33,16 @@
           const d = s.result || {};
           $('autoDownload').href = d.download_url || '#';
           $('autoDownload').hidden = !d.download_url;
+          $('autoDownload').onclick = async (event) => {
+            if (!$('apiKey')?.value.trim()) return;
+            event.preventDefault();
+            const key = $('apiKey').value.trim();
+            const response = await fetch(d.download_url, {headers:{'X-API-Key':key}});
+            if (!response.ok) throw new Error('Could not download the trained package.');
+            const blob = await response.blob(); const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href=url; a.download=`${d.experiment}-trained-model.zip`;
+            document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+          };
           result(JSON.stringify(d, null, 2));
           status('Your deployable AI is ready.');
           break;
