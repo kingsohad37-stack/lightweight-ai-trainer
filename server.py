@@ -152,16 +152,16 @@ def _extract_json_array(text: str) -> list[dict]:
 
 @original.app.post("/api/ai/dataset", dependencies=[Depends(original.require_api_key)])
 def generate_dataset(request: DatasetGenerateRequest):
-    """Generate a training-ready dataset with Gemini and return it as text.
+    """Generate a training-ready dataset with the dedicated dataset Gemini key.
 
-    The API key is used only for this request and is never persisted by this
-    endpoint. The frontend can immediately send the returned file to the
-    normal dataset-upload endpoint, so generated data follows the same
-    analysis/training path as user-uploaded data.
+    DATASET_GEMINI_API_KEY is intentionally separate from all training and
+    general AI-provider credentials. A request-supplied key remains supported
+    for users who want to bring their own Gemini key for dataset generation.
+    Neither key is persisted by this endpoint.
     """
-    key = request.api_key or os.environ.get("GEMINI_API_KEY")
+    key = request.api_key or os.environ.get("DATASET_GEMINI_API_KEY")
     if not key:
-        raise HTTPException(400, "A Gemini API key is required. Add one in the form or configure GEMINI_API_KEY on Render.")
+        raise HTTPException(400, "A Gemini API key is required for dataset generation. Add DATASET_GEMINI_API_KEY on Render or enter your own key.")
     model = request.model or os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
     columns = [c.strip() for c in request.columns.split(",") if c.strip()]
     if not columns:
@@ -198,7 +198,6 @@ def generate_dataset(request: DatasetGenerateRequest):
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(502, f"Could not validate Gemini's dataset: {exc}") from exc
 
-    # Normalize to the requested schema and cap any provider over-generation.
     records = [{column: str(row.get(column, "")) for column in columns} for row in records[:request.rows]]
     if len(records) < 5:
         raise HTTPException(502, "Gemini returned too few valid records. Try again with a smaller dataset size.")
@@ -208,8 +207,6 @@ def generate_dataset(request: DatasetGenerateRequest):
         filename = "ai-generated-dataset.jsonl"
         media_type = "application/jsonl"
     elif request.format == "txt":
-        # Conversation-friendly text format. This is intentionally compatible
-        # with /api/chat when the dataset is used for language-model training.
         lines = []
         for row in records:
             lines.append("\n".join(f"{column}: {row[column]}" for column in columns))
@@ -259,13 +256,11 @@ def generate_text(request: original.GenerateRequest):
         generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
         continuation_ids = generated_ids[len(prompt_ids):]
         text = tokenizer.decode(continuation_ids)
-        return {"experiment": name, "text": text, "prompt": request.prompt, "epoch": metadata.get("epoch")}
+        return {"experiment": name, "prompt": request.prompt, "text": text, "epoch": metadata.get("epoch")}
     except HTTPException:
         raise
-    except FileNotFoundError as exc:
-        raise HTTPException(404, str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(500, f"Text generation failed: {exc}") from exc
 
 
 class ChatMessage(BaseModel):
@@ -282,18 +277,18 @@ class ChatRequest(BaseModel):
 
 
 def _chat_prompt(messages: list[ChatMessage]) -> str:
-    role_names = {"system": "System", "user": "User", "assistant": "Assistant"}
-    parts = []
+    lines = []
     for message in messages:
-        role = role_names.get(message.role.lower().strip(), "User")
-        parts.append(f"{role}: {message.content.strip()}")
-    parts.append("Assistant:")
-    return "\n".join(parts)
+        role = message.role.strip().lower()
+        label = "System" if role == "system" else "Assistant" if role == "assistant" else "User"
+        lines.append(f"{label}: {message.content.strip()}")
+    lines.append("Assistant:")
+    return "\n".join(lines)
 
 
 @original.app.post("/api/chat", dependencies=[Depends(original.require_api_key)])
 def chat(request: ChatRequest):
-    """Run a multi-turn conversation against a trained tiny-transformer LM."""
+    """Run a multi-turn conversation against a tiny-transformer LM."""
     from trainer.algorithms.transformer import TinyTransformer
     from trainer.tokenizers.char_tokenizer import CharTokenizer
     from trainer.training.checkpoint import CheckpointManager
@@ -307,7 +302,8 @@ def chat(request: ChatRequest):
 
         metadata = checkpoint.get("metadata", {})
         if metadata.get("algorithm") != "tiny_transformer":
-            raise HTTPException(400, "Chat is available only for language-model (tiny_transformer) experiments.")
+            raise HTTPException(400, "Chat requires a language-model training run (task=language_modeling, algorithm=tiny_transformer).")
+
         transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
         tokenizer_state = checkpoint.get("preprocessor_state")
         if not transformer_state or not tokenizer_state:
@@ -323,46 +319,19 @@ def chat(request: ChatRequest):
         for marker in ("\nUser:", "\nSystem:", "\nAssistant:"):
             if marker in text:
                 text = text.split(marker, 1)[0]
-        return {"experiment": name, "text": text.strip(), "messages": [m.model_dump() for m in request.messages], "epoch": metadata.get("epoch")}
+        text = text.strip()
+        return {
+            "experiment": name,
+            "text": text,
+            "messages": [{"role": "assistant", "content": text}],
+            "epoch": metadata.get("epoch"),
+        }
     except HTTPException:
         raise
-    except FileNotFoundError as exc:
-        raise HTTPException(404, str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(500, f"Chat failed: {exc}") from exc
 
 
-@original.app.get("/api/experiments/{experiment}/download", dependencies=[Depends(original.require_api_key)])
-def download_experiment(experiment: str):
-    from trainer.training.checkpoint import CheckpointManager
-
-    name = original._safe_name(experiment)
-    manager = CheckpointManager(str(original.MODEL_ROOT), name)
-    latest = manager.load_latest()
-    if not latest:
-        raise HTTPException(404, "No trained model found for this experiment.")
-
-    model_dir = (original.MODEL_ROOT / name).resolve()
-    if original.MODEL_ROOT.resolve() not in model_dir.parents:
-        raise HTTPException(400, "Invalid experiment path.")
-
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in model_dir.rglob("*"):
-            if path.is_file():
-                archive.write(path, path.relative_to(model_dir))
-        manifest = {
-            "experiment": name,
-            "algorithm": latest["metadata"].get("algorithm"),
-            "epoch": latest["metadata"].get("epoch"),
-            "metrics": latest["metadata"].get("metrics", {}),
-            "config": latest["metadata"].get("config", {}),
-        }
-        archive.writestr("MODEL_MANIFEST.json", json.dumps(manifest, indent=2))
-    buffer.seek(0)
-    headers = {"Content-Disposition": f'attachment; filename="{name}-trained-model.zip"'}
-    return StreamingResponse(buffer, media_type="application/zip", headers=headers)
-
-
+# Restore the static root mount after all API routes.
 if _root_mount is not None:
     app.router.routes.append(_root_mount)
