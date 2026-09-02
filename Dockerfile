@@ -5,6 +5,9 @@ WORKDIR /app
 COPY trainer.zip /tmp/trainer.zip
 COPY extract_trainer.py /tmp/extract_trainer.py
 COPY server.py /app/server.py
+COPY export_runtime.py /app/export_runtime.py
+COPY run_chat.py /app/run_chat.py
+COPY requirements-runtime.txt /app/requirements-runtime.txt
 COPY web-overrides /tmp/web-overrides
 RUN python /tmp/extract_trainer.py
 RUN cp /tmp/web-overrides/index.html /app/trainer/web/index.html \
@@ -13,7 +16,7 @@ RUN cp /tmp/web-overrides/index.html /app/trainer/web/index.html \
 RUN pip install --no-cache-dir -r /app/trainer/requirements-web.txt
 RUN useradd --create-home --uid 10001 trainer \
     && mkdir -p /var/data \
-    && chown -R trainer:trainer /app/trainer /app/server.py /var/data \
+    && chown -R trainer:trainer /app/trainer /app/server.py /app/export_runtime.py /app/run_chat.py /app/requirements-runtime.txt /var/data \
     && rm -rf /tmp/trainer.zip /tmp/extract_trainer.py /tmp/web-overrides
 
 ENV TRAINER_DATA_DIR=/var/data
@@ -21,4 +24,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 USER trainer
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn export_runtime:app --host 0.0.0.0 --port ${PORT:-8000}"]
