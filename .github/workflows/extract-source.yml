@@ -1,0 +1,50 @@
+name: Extract trainer source
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'extracted-source/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract trainer.zip with Windows path normalization
+        run: |
+          python - <<'PY'
+          import os
+          import zipfile
+          from pathlib import Path
+
+          dest = Path('extracted-source')
+          dest.mkdir(exist_ok=True)
+          with zipfile.ZipFile('trainer.zip') as z:
+              for info in z.infolist():
+                  name = info.filename.replace('\\\\', '/')
+                  if not name:
+                      continue
+                  target = dest / name
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  if info.is_dir() or name.endswith('/'):
+                      target.mkdir(parents=True, exist_ok=True)
+                  else:
+                      with z.open(info) as src, open(target, 'wb') as dst:
+                          dst.write(src.read())
+          PY
+
+      - name: Commit extracted source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extracted-source
+          git diff --cached --quiet && exit 0
+          git commit -m 'Expose extracted trainer source for maintenance'
+          git push
