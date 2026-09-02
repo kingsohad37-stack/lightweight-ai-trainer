@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 from typing import Any
 
 import torch
@@ -10,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import server
 
-MODEL_DIR = "/opt/local-model"
+MODEL_DIR = os.environ.get("LOCAL_MODEL_DIR", "/opt/local-model")
 _MODEL = None
 _TOKENIZER = None
 
@@ -18,12 +19,11 @@ _TOKENIZER = None
 def _load_model():
     global _MODEL, _TOKENIZER
     if _MODEL is None or _TOKENIZER is None:
+        if not os.path.isdir(MODEL_DIR):
+            raise server.HTTPException(503, "The local dataset model is not installed on this server yet. Rebuild the service and try again.")
         _TOKENIZER = AutoTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)
         _MODEL = AutoModelForCausalLM.from_pretrained(
-            MODEL_DIR,
-            local_files_only=True,
-            torch_dtype=torch.float32,
-            low_cpu_mem_usage=True,
+            MODEL_DIR, local_files_only=True, torch_dtype=torch.float32, low_cpu_mem_usage=True
         )
         _MODEL.eval()
         if _TOKENIZER.pad_token_id is None:
@@ -71,16 +71,13 @@ def generate_dataset(request: server.DatasetGenerateRequest):
     columns = [c.strip() for c in request.columns.split(",") if c.strip()]
     if not columns:
         raise server.HTTPException(400, "Enter at least one column name.")
-
     model, tokenizer = _load_model()
     records: list[dict[str, str]] = []
-    # Keep each prompt/output comfortably inside the small local model's context.
     batch_size = 20
     attempts = 0
     while len(records) < request.rows and attempts < max(8, (request.rows // batch_size) * 3 + 3):
         attempts += 1
-        remaining = request.rows - len(records)
-        wanted = min(batch_size, remaining)
+        wanted = min(batch_size, request.rows - len(records))
         try:
             batch = _generate_batch(model, tokenizer, request.topic, columns, wanted)
         except Exception:
@@ -93,21 +90,14 @@ def generate_dataset(request: server.DatasetGenerateRequest):
                 records.append(normalized)
                 if len(records) >= request.rows:
                     break
-
-    if len(records) < min(5, request.rows):
-        raise server.HTTPException(
-            502,
-            "The local dataset model could not produce enough valid records. Try fewer rows or simpler columns.",
-        )
+    if len(records) < request.rows:
+        raise server.HTTPException(502, f"The local dataset model produced {len(records)} of {request.rows} requested rows. Try fewer rows or simpler columns.")
     records = records[: request.rows]
-
     if request.format == "jsonl":
         content = "\n".join(json.dumps(row, ensure_ascii=False) for row in records) + "\n"
         filename, media_type = "ai-generated-dataset.jsonl", "application/jsonl"
     elif request.format == "txt":
-        content = "\n\n".join(
-            "\n".join(f"{column}: {row[column]}" for column in columns) for row in records
-        ) + "\n"
+        content = "\n\n".join("\n".join(f"{column}: {row[column]}" for column in columns) for row in records) + "\n"
         filename, media_type = "ai-generated-dataset.txt", "text/plain"
     else:
         output = io.StringIO()
@@ -116,14 +106,8 @@ def generate_dataset(request: server.DatasetGenerateRequest):
         writer.writerows(records)
         content = output.getvalue()
         filename, media_type = "ai-generated-dataset.csv", "text/csv"
-
     return {
-        "filename": filename,
-        "format": request.format,
-        "rows": len(records),
-        "columns": columns,
-        "content": content,
-        "media_type": media_type,
-        "provider": "local",
+        "filename": filename, "format": request.format, "rows": len(records), "columns": columns,
+        "content": content, "media_type": media_type, "provider": "local",
         "model": "HuggingFaceTB/SmolLM2-135M-Instruct",
     }
