@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import io
 import json
 import os
@@ -125,6 +126,109 @@ def ai_generate(request: AIGenerateRequest):
     return {"provider": provider, "model": model, "text": text}
 
 
+class DatasetGenerateRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=1000)
+    columns: str = Field(min_length=1, max_length=2000)
+    rows: int = Field(default=100, ge=5, le=5000)
+    format: str = Field(default="csv", pattern="^(csv|jsonl|txt)$")
+    api_key: Optional[str] = Field(default=None, max_length=500)
+    model: Optional[str] = Field(default=None, max_length=120)
+
+
+def _extract_json_array(text: str) -> list[dict]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+    start, end = cleaned.find("["), cleaned.rfind("]")
+    if start < 0 or end <= start:
+        raise ValueError("Gemini did not return a JSON array.")
+    value = json.loads(cleaned[start:end + 1])
+    if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):
+        raise ValueError("Generated dataset must be an array of objects.")
+    return value
+
+
+@original.app.post("/api/ai/dataset", dependencies=[Depends(original.require_api_key)])
+def generate_dataset(request: DatasetGenerateRequest):
+    """Generate a training-ready dataset with Gemini and return it as text.
+
+    The API key is used only for this request and is never persisted by this
+    endpoint. The frontend can immediately send the returned file to the
+    normal dataset-upload endpoint, so generated data follows the same
+    analysis/training path as user-uploaded data.
+    """
+    key = request.api_key or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise HTTPException(400, "A Gemini API key is required. Add one in the form or configure GEMINI_API_KEY on Render.")
+    model = request.model or os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
+    columns = [c.strip() for c in request.columns.split(",") if c.strip()]
+    if not columns:
+        raise HTTPException(400, "Enter at least one column name.")
+
+    prompt = f"""Create exactly {request.rows} high-quality synthetic training records about: {request.topic}\n\nColumns: {', '.join(columns)}\n\nReturn ONLY a JSON array of objects. Every object must contain exactly these columns. Keep values useful for machine-learning training, varied, realistic, internally consistent, and free of markdown. Do not add explanations outside the JSON array."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": min(32768, max(2048, request.rows * len(columns) * 40)),
+            "responseMimeType": "application/json",
+            "responseSchema": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {column: {"type": "STRING"} for column in columns},
+                    "required": columns,
+                },
+            },
+        },
+    }
+    data = _post_json(url, {"Content-Type": "application/json", "x-goog-api-key": key}, payload, timeout=180)
+    raw = ""
+    for candidate in data.get("candidates", []):
+        for part in candidate.get("content", {}).get("parts", []):
+            if isinstance(part.get("text"), str):
+                raw += part["text"]
+    if not raw:
+        raise HTTPException(502, "Gemini returned no dataset content.")
+    try:
+        records = _extract_json_array(raw)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(502, f"Could not validate Gemini's dataset: {exc}") from exc
+
+    # Normalize to the requested schema and cap any provider over-generation.
+    records = [{column: str(row.get(column, "")) for column in columns} for row in records[:request.rows]]
+    if len(records) < 5:
+        raise HTTPException(502, "Gemini returned too few valid records. Try again with a smaller dataset size.")
+
+    if request.format == "jsonl":
+        content = "\n".join(json.dumps(row, ensure_ascii=False) for row in records) + "\n"
+        filename = "ai-generated-dataset.jsonl"
+        media_type = "application/jsonl"
+    elif request.format == "txt":
+        # Conversation-friendly text format. This is intentionally compatible
+        # with /api/chat when the dataset is used for language-model training.
+        lines = []
+        for row in records:
+            lines.append("\n".join(f"{column}: {row[column]}" for column in columns))
+            lines.append("")
+        content = "\n".join(lines).strip() + "\n"
+        filename = "ai-generated-dataset.txt"
+        media_type = "text/plain"
+    else:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(records)
+        content = output.getvalue()
+        filename = "ai-generated-dataset.csv"
+        media_type = "text/csv"
+
+    return {"filename": filename, "format": request.format, "rows": len(records), "columns": columns, "content": content, "media_type": media_type}
+
+
 @original.app.post("/api/generate", dependencies=[Depends(original.require_api_key)])
 def generate_text(request: original.GenerateRequest):
     """Generate a continuation from a genuine tiny-transformer LM checkpoint."""
@@ -142,12 +246,7 @@ def generate_text(request: original.GenerateRequest):
         metadata = checkpoint.get("metadata", {})
         algorithm = metadata.get("algorithm")
         if algorithm != "tiny_transformer":
-            raise HTTPException(
-                400,
-                f"Experiment '{name}' is a {algorithm or 'non-text'} model. "
-                "Step 5 requires a language-model training run (task=language_modeling, algorithm=tiny_transformer). "
-                "Your classification/regression model is still valid for prediction."
-            )
+            raise HTTPException(400, f"Experiment '{name}' is a {algorithm or 'non-text'} model. Step 5 requires a language-model training run (task=language_modeling, algorithm=tiny_transformer). Your classification/regression model is still valid for prediction.")
 
         transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
         tokenizer_state = checkpoint.get("preprocessor_state")
@@ -158,10 +257,6 @@ def generate_text(request: original.GenerateRequest):
         tokenizer = CharTokenizer.from_state(tokenizer_state)
         prompt_ids = tokenizer.encode(request.prompt)
         generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
-
-        # The model's generate() API returns prompt + continuation. The web API
-        # should return only the newly generated portion so the chat UI does not
-        # duplicate the user's message.
         continuation_ids = generated_ids[len(prompt_ids):]
         text = tokenizer.decode(continuation_ids)
         return {"experiment": name, "text": text, "prompt": request.prompt, "epoch": metadata.get("epoch")}
@@ -187,7 +282,6 @@ class ChatRequest(BaseModel):
 
 
 def _chat_prompt(messages: list[ChatMessage]) -> str:
-    """Serialize a conversation into a stable, trainable text format."""
     role_names = {"system": "System", "user": "User", "assistant": "Assistant"}
     parts = []
     for message in messages:
@@ -214,7 +308,6 @@ def chat(request: ChatRequest):
         metadata = checkpoint.get("metadata", {})
         if metadata.get("algorithm") != "tiny_transformer":
             raise HTTPException(400, "Chat is available only for language-model (tiny_transformer) experiments.")
-
         transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
         tokenizer_state = checkpoint.get("preprocessor_state")
         if not transformer_state or not tokenizer_state:
@@ -227,18 +320,10 @@ def chat(request: ChatRequest):
         generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
         continuation_ids = generated_ids[len(prompt_ids):]
         text = tokenizer.decode(continuation_ids)
-
-        # Stop at a new speaker turn so the chat UI receives only the assistant
-        # response rather than fabricated future conversation turns.
         for marker in ("\nUser:", "\nSystem:", "\nAssistant:"):
             if marker in text:
                 text = text.split(marker, 1)[0]
-        return {
-            "experiment": name,
-            "text": text.strip(),
-            "messages": [m.model_dump() for m in request.messages],
-            "epoch": metadata.get("epoch"),
-        }
+        return {"experiment": name, "text": text.strip(), "messages": [m.model_dump() for m in request.messages], "epoch": metadata.get("epoch")}
     except HTTPException:
         raise
     except FileNotFoundError as exc:
