@@ -8,7 +8,8 @@ COPY server.py /app/server.py
 COPY web-overrides /tmp/web-overrides
 RUN python /tmp/extract_trainer.py
 RUN cp /tmp/web-overrides/index.html /app/trainer/web/index.html \
-    && cp /tmp/web-overrides/app.js /app/trainer/web/app.js
+    && cp /tmp/web-overrides/app.js /app/trainer/web/app.js \
+    && cp /tmp/web-overrides/styles.css /app/trainer/web/styles.css
 RUN pip install --no-cache-dir -r /app/trainer/requirements-web.txt
 RUN useradd --create-home --uid 10001 trainer \
     && mkdir -p /var/data \
