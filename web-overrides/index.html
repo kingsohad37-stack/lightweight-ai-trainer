@@ -19,7 +19,7 @@
   <main>
     <section class="card dataset-ai">
       <h2>✨ Create a dataset with AI</h2>
-      <p class="sub">Use your Gemini API key to generate synthetic training data, then send it through the normal dataset pipeline. Your key is used only for the request.</p>
+      <p class="sub">Generate synthetic training data with the Gemini AI service configured securely on the server. No API key is needed here.</p>
       <input id="datasetTopic" type="text" maxlength="1000" placeholder="What should the dataset teach? e.g. customer support questions and helpful answers">
       <input id="datasetColumns" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated (e.g. text,label)">
       <div class="row">
@@ -30,7 +30,6 @@
           <option value="txt">TXT — language-model/chat training</option>
         </select>
       </div>
-      <input id="datasetGeminiKey" type="password" autocomplete="off" placeholder="Gemini API key (optional if GEMINI_API_KEY is set on Render)">
       <button onclick="generateDataset()">Generate dataset with Gemini</button>
       <pre id="datasetAIResult">No AI dataset created yet.</pre>
     </section>
@@ -126,7 +125,7 @@
 
     <section class="card dataset-ai bottom-dataset">
       <h2>✨ Create another dataset with AI</h2>
-      <p class="sub">Same Gemini dataset generator, placed here too so you can create more data after training/testing without scrolling back to the top.</p>
+      <p class="sub">Generate another dataset using the Gemini AI service configured on the server. No API key is needed here.</p>
       <input id="datasetTopicBottom" type="text" maxlength="1000" placeholder="Dataset topic or training objective">
       <input id="datasetColumnsBottom" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated">
       <div class="row">
@@ -137,11 +136,10 @@
           <option value="txt">TXT — language-model/chat training</option>
         </select>
       </div>
-      <input id="datasetGeminiKeyBottom" type="password" autocomplete="off" placeholder="Gemini API key (optional if configured on Render)">
       <button onclick="generateDataset(true)">Generate dataset with Gemini</button>
       <pre id="datasetAIResultBottom">No AI dataset created yet.</pre>
     </section>
   </main>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20260903"></script>
 </body>
 </html>
