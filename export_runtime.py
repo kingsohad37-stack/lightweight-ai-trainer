@@ -18,25 +18,35 @@ _root_mount = getattr(server, "_root_mount", None)
 if _root_mount is not None and _root_mount in app.router.routes:
     app.router.routes.remove(_root_mount)
 
-# Re-register dataset generation explicitly at runtime. This removes any
-# duplicate/stale route definitions inherited from the bundled trainer and
-# guarantees both supported POST endpoints resolve to the same handler.
+# Re-register dataset generation explicitly at runtime. Some versions of the
+# bundled trainer expose the same paths through a GET/static route. Starlette
+# stops at the first matching path and returns 405 instead of continuing to a
+# later POST route, so the dataset POST routes must be placed FIRST, not merely
+# before the root static mount.
 for route in list(app.router.routes):
     if getattr(route, "path", None) in {"/api/ai/dataset", "/api/ai/dataset/generate"}:
         app.router.routes.remove(route)
 
-app.router.add_api_route(
-    "/api/ai/dataset",
-    server.generate_dataset,
-    methods=["POST"],
-    dependencies=[Depends(server.original.require_api_key)],
-)
-app.router.add_api_route(
+_dataset_generate_route = app.router.add_api_route(
     "/api/ai/dataset/generate",
     server.generate_dataset,
     methods=["POST"],
     dependencies=[Depends(server.original.require_api_key)],
 )
+_dataset_route = app.router.add_api_route(
+    "/api/ai/dataset",
+    server.generate_dataset,
+    methods=["POST"],
+    dependencies=[Depends(server.original.require_api_key)],
+)
+
+# Force these two routes to the very front so an older same-path GET route
+# cannot intercept the request and produce 405 Method Not Allowed.
+for route in (_dataset_route, _dataset_generate_route):
+    if route in app.router.routes:
+        app.router.routes.remove(route)
+app.router.routes.insert(0, _dataset_route)
+app.router.routes.insert(0, _dataset_generate_route)
 
 # Replace server.py's checkpoint-only download with a self-contained export.
 for route in list(app.routes):
