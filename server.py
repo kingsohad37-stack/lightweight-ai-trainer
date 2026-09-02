@@ -24,8 +24,9 @@ for route in list(app.routes):
         _root_mount = route
         app.router.routes.remove(route)
 
-# Replace the original /api/generate route with a friendlier version that
-# explains when a classification/regression model cannot generate text.
+# Replace the original /api/generate route with the web-safe implementation
+# below. Classification/regression models are intentionally rejected here:
+# text generation is only valid for language-model checkpoints.
 for route in list(app.routes):
     if getattr(route, "path", None) == "/api/generate" and "POST" in getattr(route, "methods", set()):
         app.router.routes.remove(route)
@@ -126,6 +127,7 @@ def ai_generate(request: AIGenerateRequest):
 
 @original.app.post("/api/generate", dependencies=[Depends(original.require_api_key)])
 def generate_text(request: original.GenerateRequest):
+    """Generate a continuation from a genuine tiny-transformer LM checkpoint."""
     from trainer.algorithms.transformer import TinyTransformer
     from trainer.tokenizers.char_tokenizer import CharTokenizer
     from trainer.training.checkpoint import CheckpointManager
@@ -136,17 +138,33 @@ def generate_text(request: original.GenerateRequest):
         checkpoint = manager.load_epoch(request.epoch) if request.epoch else manager.load_latest()
         if not checkpoint:
             raise HTTPException(404, "No trained checkpoint found for this experiment.")
-        algorithm = checkpoint["metadata"].get("algorithm")
+
+        metadata = checkpoint.get("metadata", {})
+        algorithm = metadata.get("algorithm")
         if algorithm != "tiny_transformer":
-            raise HTTPException(400, f"Experiment '{name}' uses {algorithm or 'a non-text model'}. Generate text requires a tiny_transformer language-model experiment.")
+            raise HTTPException(
+                400,
+                f"Experiment '{name}' is a {algorithm or 'non-text'} model. "
+                "Step 5 requires a language-model training run (task=language_modeling, algorithm=tiny_transformer). "
+                "Your classification/regression model is still valid for prediction."
+            )
+
         transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
         tokenizer_state = checkpoint.get("preprocessor_state")
         if not transformer_state or not tokenizer_state:
-            raise HTTPException(400, "This language-model checkpoint is missing transformer/tokenizer state.")
+            raise HTTPException(400, "This language-model checkpoint is incomplete: transformer/tokenizer state is missing.")
+
         model = TinyTransformer.from_state(transformer_state)
         tokenizer = CharTokenizer.from_state(tokenizer_state)
-        text = tokenizer.decode(model.generate(tokenizer.encode(request.prompt), request.max_new_tokens, request.temperature))
-        return {"experiment": name, "text": text}
+        prompt_ids = tokenizer.encode(request.prompt)
+        generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
+
+        # The model's generate() API returns prompt + continuation. The web API
+        # should return only the newly generated portion so the chat UI does not
+        # duplicate the user's message.
+        continuation_ids = generated_ids[len(prompt_ids):]
+        text = tokenizer.decode(continuation_ids)
+        return {"experiment": name, "text": text, "prompt": request.prompt, "epoch": metadata.get("epoch")}
     except HTTPException:
         raise
     except FileNotFoundError as exc:
