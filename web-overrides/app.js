@@ -54,17 +54,19 @@ async function generateDataset(bottom=false){
   const columns = $(`datasetColumns${suffix}`).value.trim();
   const rows = Number($(`datasetRows${suffix}`).value || 100);
   const format = $(`datasetFormat${suffix}`).value;
-  const apiKey = $(`datasetGeminiKey${suffix}`).value.trim();
   const result = $(`datasetAIResult${suffix}`);
   if(!topic) return alert('Describe what the AI-generated dataset should teach.');
   if(!columns) return alert('Enter the dataset columns.');
   result.textContent = 'Generating dataset with Gemini…';
   try {
-    const data = await api('/api/ai/dataset/generate',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({topic, columns, rows, format, api_key:apiKey || null})
-    });
+    const payload = {topic, columns, rows, format};
+    let data;
+    try {
+      data = await api('/api/ai/dataset/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    } catch(e) {
+      // Compatibility fallback for an older deployed server route.
+      data = await api('/api/ai/dataset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    }
     await uploadGeneratedDataset(data, result);
     const other = bottom ? '' : 'Bottom';
     if($(`datasetTopic${other}`)) $(`datasetTopic${other}`).value = topic;
