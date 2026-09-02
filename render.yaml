@@ -26,8 +26,6 @@ services:
         sync: false
       - key: AI_PROVIDER
         value: gemini
-      - key: DATASET_GEMINI_API_KEY
-        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
