@@ -1,131 +1,16 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Lightweight AI Trainer</title>
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/auto.css?v=20260903">
-</head>
-<body>
-  <header class="top">
-    <div>
-      <div class="eyebrow">LIGHTWEIGHT AI TRAINER</div>
-      <h1>Describe it. Train it. Download it.</h1>
-      <p class="sub">Build a trained, deployable AI from a plain-English description — or switch to Manual Mode for full control.</p>
-    </div>
-    <span id="health" class="pill">Checking API…</span>
-  </header>
-
-  <main>
-    <section id="autoMode" class="card">
-      <h2>⚡ Build an AI in 2 steps</h2>
-      <p class="auto-help"><b>1.</b> Describe what you want. <b>2.</b> Download your trained, deployable AI package.</p>
-      <textarea id="autoPrompt" placeholder="Example: Build a customer-support chatbot for my product. It should answer common questions conversationally and be easy to deploy."></textarea>
-      <button id="autoBuild" type="button">Build my AI</button>
-      <div id="autoStatus" role="status" aria-live="polite"></div>
-      <pre id="autoResult" class="auto-result">Your AI plan and build progress will appear here.</pre>
-      <a id="autoDownload" class="button" hidden download>Download deployable AI</a>
-      <details class="advanced-toggle"><summary>Advanced / Manual Mode</summary>
-        <p class="sub">Keep using the complete manual workflow below for custom datasets, training settings, predictions, external providers, and language-model chat.</p>
-      </details>
-    </section>
-
-    <section class="card dataset-ai">
-      <h2>✨ Create a dataset with AI</h2>
-      <p class="sub">Generate synthetic training data locally on the server. No Gemini or provider API key is needed.</p>
-      <input id="datasetTopic" type="text" maxlength="1000" placeholder="What should the dataset teach? e.g. customer support questions and helpful answers">
-      <input id="datasetColumns" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated (e.g. text,label)">
-      <div class="row">
-        <input id="datasetRows" type="number" min="5" max="5000" value="100" placeholder="Rows">
-        <select id="datasetFormat">
-          <option value="csv">CSV — classification/regression</option>
-          <option value="jsonl">JSONL — structured data</option>
-          <option value="txt">TXT — language-model/chat training</option>
-        </select>
-      </div>
-      <button onclick="generateDataset()">Generate dataset locally</button>
-      <pre id="datasetAIResult">No AI dataset created yet.</pre>
-    </section>
-
-    <section class="card">
-      <h2>Connection</h2>
-      <p class="sub">Only needed when the server has TRAINER_API_KEY configured.</p>
-      <input id="apiKey" type="password" autocomplete="off" placeholder="Trainer API key (optional)">
-    </section>
-
-    <section class="card">
-      <h2>1. Upload dataset</h2>
-      <div class="upload"><input id="dataset" type="file" accept=".csv,.tsv,.json,.jsonl,.txt"><button onclick="uploadDataset()">Upload</button></div>
-      <pre id="uploadResult">No dataset uploaded.</pre>
-    </section>
-
-    <section class="card">
-      <h2>2. Describe what you want to train</h2>
-      <textarea id="prompt" placeholder="Example: Train a classification model to predict the label column from the text column. For a chatbot-style model, describe that you want conversational text generation."></textarea>
-      <button onclick="makePlan()">Create AI training plan</button>
-      <pre id="planResult">No plan yet.</pre>
-    </section>
-
-    <section class="card">
-      <h2>3. Name and start training</h2>
-      <input id="modelName" type="text" maxlength="120" placeholder="Model / experiment name (e.g. my-assistant-v1)">
-      <p class="sub">The name is applied to the training configuration before the job starts.</p>
-      <textarea id="config" placeholder="The generated training config appears here. You can review or edit it before training."></textarea>
-      <button onclick="startTraining()">Start training</button>
-      <div id="jobBox" class="job hidden"><div class="jobhead"><b id="jobStatus">Queued</b><span id="jobId"></span></div><pre id="jobResult"></pre></div>
-    </section>
-
-    <section class="card">
-      <h2>4. Predict</h2>
-      <input id="predictExperiment" type="text" placeholder="Experiment name">
-      <textarea id="predictRecords" placeholder='Paste input records as a JSON array, e.g. [{"text":"What is the largest planet?"}]'></textarea>
-      <button onclick="runPrediction()">Predict</button><pre id="predictResult">No prediction yet.</pre>
-    </section>
-
-    <section class="card">
-      <h2>5. Generate text</h2>
-      <p class="sub">Only language-model experiments can generate text. A classifier/regressor cannot be converted into a language model after training.</p>
-      <input id="generateExperiment" type="text" placeholder="Language-model experiment name">
-      <textarea id="generatePrompt" placeholder="Prompt text"></textarea>
-      <button onclick="runGeneration()">Generate</button><pre id="generateResult">Train a tiny transformer language model first.</pre>
-    </section>
-
-    <section class="card">
-      <h2>6. Chat with your trained model</h2>
-      <p class="sub">This uses the trained tiny-transformer checkpoint and keeps the conversation history for the current chat.</p>
-      <input id="chatExperiment" type="text" placeholder="Language-model experiment name">
-      <div id="chatMessages" class="chat" aria-live="polite"></div>
-      <textarea id="chatInput" placeholder="Message your model…" onkeydown="handleChatKey(event)"></textarea>
-      <div class="row"><button onclick="sendChat()">Send</button><button class="secondary" onclick="clearChat()">Clear chat</button></div>
-      <pre id="chatResult">No conversation yet.</pre>
-    </section>
-
-    <section class="card">
-      <h2>7. External AI provider</h2>
-      <p class="sub">Use a server-side Render key or supply a key for this request. Keys are not saved by the app.</p>
-      <select id="aiProvider"><option value="auto">Auto / server default</option><option value="gemini">Google Gemini</option><option value="groq">Groq</option><option value="openai">OpenAI</option><option value="custom">Custom OpenAI-compatible</option></select>
-      <input id="aiModel" type="text" placeholder="Model (optional)"><input id="aiKey" type="password" autocomplete="off" placeholder="Provider API key (optional)">
-      <textarea id="aiPrompt" placeholder="Ask Gemini, Groq, OpenAI, or your compatible provider anything..."></textarea>
-      <button onclick="runAI()">Run AI</button><pre id="aiResult">No external AI request yet.</pre>
-    </section>
-
-    <section class="card">
-      <h2>8. Download trained model</h2>
-      <p class="sub">Downloads the latest checkpoint, model weights, tokenizer/preprocessor state, metadata, training configuration, and bundled runtime as a ZIP.</p>
-      <input id="downloadExperiment" type="text" placeholder="Experiment name"><button onclick="downloadModel()">Download trained model</button>
-      <pre id="downloadResult">No download requested yet.</pre>
-    </section>
-
-    <section class="card dataset-ai bottom-dataset">
-      <h2>✨ Create another dataset with AI</h2>
-      <p class="sub">Generate another dataset locally. No Gemini or provider API key is needed.</p>
-      <input id="datasetTopicBottom" type="text" maxlength="1000" placeholder="Dataset topic or training objective"><input id="datasetColumnsBottom" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated">
-      <div class="row"><input id="datasetRowsBottom" type="number" min="5" max="5000" value="100" placeholder="Rows"><select id="datasetFormatBottom"><option value="csv">CSV — classification/regression</option><option value="jsonl">JSONL — structured data</option><option value="txt">TXT — language-model/chat training</option></select></div>
-      <button onclick="generateDataset(true)">Generate dataset locally</button><pre id="datasetAIResultBottom">No AI dataset created yet.</pre>
-    </section>
-  </main>
-  <script src="/app.js?v=20260903"></script>
-  <script src="/auto.js?v=20260903"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lightweight AI Trainer</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/auto.css?v=20260903"></head><body>
+<header class="top"><div><div class="eyebrow">LIGHTWEIGHT AI TRAINER</div><h1>Describe it. Train it. Download it.</h1><p class="sub">Build a trained, deployable AI from a plain-English description — or switch to Manual Mode for full control.</p></div><span id="health" class="pill">Checking API…</span></header>
+<main>
+<section id="autoMode" class="card"><h2>⚡ Build an AI in 2 steps</h2><p class="auto-help"><b>1.</b> Describe what you want. <b>2.</b> Download your trained, deployable AI package.</p><textarea id="autoPrompt" placeholder="Example: Build a customer-support chatbot for my product. It should answer common questions conversationally and be easy to deploy."></textarea><button id="autoBuild" type="button">Build my AI</button><div id="autoStatus" role="status" aria-live="polite"></div><pre id="autoResult" class="auto-result">Your AI plan and build progress will appear here.</pre><button id="autoDownload" type="button" hidden>Download deployable AI</button><details class="advanced-toggle"><summary>Advanced / Manual Mode</summary><p class="sub">Keep using the complete manual workflow below for custom datasets, training settings, predictions, external providers, and language-model chat.</p></details></section>
+<section class="card dataset-ai"><h2>✨ Create a dataset with AI</h2><p class="sub">Generate synthetic training data locally on the server. No Gemini or provider API key is needed.</p><input id="datasetTopic" type="text" maxlength="1000" placeholder="What should the dataset teach?"><input id="datasetColumns" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated"><div class="row"><input id="datasetRows" type="number" min="5" max="5000" value="100"><select id="datasetFormat"><option value="csv">CSV — classification/regression</option><option value="jsonl">JSONL — structured data</option><option value="txt">TXT — language-model/chat training</option></select></div><button onclick="generateDataset()">Generate dataset locally</button><pre id="datasetAIResult">No AI dataset created yet.</pre></section>
+<section class="card"><h2>Connection</h2><p class="sub">Only needed when the server has TRAINER_API_KEY configured.</p><input id="apiKey" type="password" autocomplete="off" placeholder="Trainer API key (optional)"></section>
+<section class="card"><h2>1. Upload dataset</h2><div class="upload"><input id="dataset" type="file" accept=".csv,.tsv,.json,.jsonl,.txt"><button onclick="uploadDataset()">Upload</button></div><pre id="uploadResult">No dataset uploaded.</pre></section>
+<section class="card"><h2>2. Describe what you want to train</h2><textarea id="prompt" placeholder="Example: Train a classification model to predict the label column from the text column."></textarea><button onclick="makePlan()">Create AI training plan</button><pre id="planResult">No plan yet.</pre></section>
+<section class="card"><h2>3. Name and start training</h2><input id="modelName" type="text" maxlength="120" placeholder="Model / experiment name"><textarea id="config" placeholder="Training config"></textarea><button onclick="startTraining()">Start training</button><div id="jobBox" class="job hidden"><div class="jobhead"><b id="jobStatus">Queued</b><span id="jobId"></span></div><pre id="jobResult"></pre></div></section>
+<section class="card"><h2>4. Predict</h2><input id="predictExperiment" placeholder="Experiment name"><textarea id="predictRecords" placeholder='[{"text":"What is the largest planet?"}]'></textarea><button onclick="runPrediction()">Predict</button><pre id="predictResult">No prediction yet.</pre></section>
+<section class="card"><h2>5. Generate text</h2><input id="generateExperiment" placeholder="Language-model experiment name"><textarea id="generatePrompt" placeholder="Prompt text"></textarea><button onclick="runGeneration()">Generate</button><pre id="generateResult">Train a tiny transformer language model first.</pre></section>
+<section class="card"><h2>6. Chat with your trained model</h2><input id="chatExperiment" placeholder="Language-model experiment name"><div id="chatMessages" class="chat" aria-live="polite"></div><textarea id="chatInput" placeholder="Message your model…" onkeydown="handleChatKey(event)"></textarea><div class="row"><button onclick="sendChat()">Send</button><button class="secondary" onclick="clearChat()">Clear chat</button></div><pre id="chatResult">No conversation yet.</pre></section>
+<section class="card"><h2>7. External AI provider</h2><select id="aiProvider"><option value="auto">Auto / server default</option><option value="gemini">Google Gemini</option><option value="groq">Groq</option><option value="openai">OpenAI</option><option value="custom">Custom OpenAI-compatible</option></select><input id="aiModel" placeholder="Model (optional)"><input id="aiKey" type="password" autocomplete="off" placeholder="Provider API key (optional)"><textarea id="aiPrompt" placeholder="Ask your provider anything..."></textarea><button onclick="runAI()">Run AI</button><pre id="aiResult">No external AI request yet.</pre></section>
+<section class="card"><h2>8. Download trained model</h2><input id="downloadExperiment" placeholder="Experiment name"><button onclick="downloadModel()">Download trained model</button><pre id="downloadResult">No download requested yet.</pre></section>
+</main><script src="/app.js?v=20260903"></script><script src="/auto.js?v=20260903"></script></body></html>
