@@ -17,6 +17,24 @@
   </header>
 
   <main>
+    <section class="card dataset-ai">
+      <h2>✨ Create a dataset with AI</h2>
+      <p class="sub">Use your Gemini API key to generate synthetic training data, then send it through the normal dataset pipeline. Your key is used only for the request.</p>
+      <input id="datasetTopic" type="text" maxlength="1000" placeholder="What should the dataset teach? e.g. customer support questions and helpful answers">
+      <input id="datasetColumns" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated (e.g. text,label)">
+      <div class="row">
+        <input id="datasetRows" type="number" min="5" max="5000" value="100" placeholder="Rows">
+        <select id="datasetFormat">
+          <option value="csv">CSV — classification/regression</option>
+          <option value="jsonl">JSONL — structured data</option>
+          <option value="txt">TXT — language-model/chat training</option>
+        </select>
+      </div>
+      <input id="datasetGeminiKey" type="password" autocomplete="off" placeholder="Gemini API key (optional if GEMINI_API_KEY is set on Render)">
+      <button onclick="generateDataset()">Generate dataset with Gemini</button>
+      <pre id="datasetAIResult">No AI dataset created yet.</pre>
+    </section>
+
     <section class="card">
       <h2>Connection</h2>
       <p class="sub">Only needed when the server has TRAINER_API_KEY configured.</p>
@@ -104,6 +122,24 @@
       <input id="downloadExperiment" type="text" placeholder="Experiment name">
       <button onclick="downloadModel()">Download trained model</button>
       <pre id="downloadResult">No download requested yet.</pre>
+    </section>
+
+    <section class="card dataset-ai bottom-dataset">
+      <h2>✨ Create another dataset with AI</h2>
+      <p class="sub">Same Gemini dataset generator, placed here too so you can create more data after training/testing without scrolling back to the top.</p>
+      <input id="datasetTopicBottom" type="text" maxlength="1000" placeholder="Dataset topic or training objective">
+      <input id="datasetColumnsBottom" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated">
+      <div class="row">
+        <input id="datasetRowsBottom" type="number" min="5" max="5000" value="100" placeholder="Rows">
+        <select id="datasetFormatBottom">
+          <option value="csv">CSV — classification/regression</option>
+          <option value="jsonl">JSONL — structured data</option>
+          <option value="txt">TXT — language-model/chat training</option>
+        </select>
+      </div>
+      <input id="datasetGeminiKeyBottom" type="password" autocomplete="off" placeholder="Gemini API key (optional if configured on Render)">
+      <button onclick="generateDataset(true)">Generate dataset with Gemini</button>
+      <pre id="datasetAIResultBottom">No AI dataset created yet.</pre>
     </section>
   </main>
   <script src="/app.js"></script>
