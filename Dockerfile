@@ -15,7 +15,7 @@ RUN cp /tmp/web-overrides/index.html /app/trainer/web/index.html \
     && cp /tmp/web-overrides/app.js /app/trainer/web/app.js \
     && cp /tmp/web-overrides/styles.css /app/trainer/web/styles.css
 RUN pip install --no-cache-dir -r /app/trainer/requirements-web.txt \
-    && pip install --no-cache-dir "transformers>=4.56,<5" "safetensors>=0.5,<1"
+    && pip install --no-cache-dir "torch>=2.4,<3" "transformers>=4.56,<5" "safetensors>=0.5,<1"
 
 # Bundle a small instruction-tuned open-source model locally so dataset
 # generation works without Gemini/OpenAI/Groq credentials at runtime.
