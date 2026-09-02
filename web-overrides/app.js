@@ -1,5 +1,7 @@
 const $ = id => document.getElementById(id);
 
+const chatState = { messages: [] };
+
 async function api(path, options={}) {
   const key = $('apiKey') && $('apiKey').value.trim();
   const headers = {...(options.headers || {})};
@@ -57,6 +59,10 @@ async function startTraining(){
   let config;
   try { config = JSON.parse($('config').value); }
   catch { return alert('Training config must be valid JSON.'); }
+  const modelName = $('modelName').value.trim();
+  if(modelName) config.experiment_name = modelName;
+  if(!config.experiment_name) return alert('Give the model a name before training.');
+  $('config').value = JSON.stringify(config,null,2);
   try {
     const data = await api('/api/training/start',{
       method:'POST',
@@ -80,8 +86,10 @@ async function pollJob(id){
       const rec = data.result && data.result.experiment_record;
       const name = rec && rec.config && rec.config.experiment_name;
       if(name){
+        $('modelName').value = name;
         $('predictExperiment').value = name;
         $('generateExperiment').value = name;
+        $('chatExperiment').value = name;
         $('downloadExperiment').value = name;
       }
     }
@@ -116,6 +124,62 @@ async function runPrediction(){
     });
     $('predictResult').textContent = JSON.stringify(data.predictions,null,2);
   } catch(e) { $('predictResult').textContent = e.message; }
+}
+
+function renderChat(){
+  const box = $('chatMessages');
+  if(!box) return;
+  box.innerHTML = '';
+  for(const msg of chatState.messages){
+    const item = document.createElement('div');
+    item.className = `chat-message ${msg.role}`;
+    const label = document.createElement('strong');
+    label.textContent = msg.role === 'user' ? 'You' : 'Model';
+    const text = document.createElement('div');
+    text.textContent = msg.content;
+    item.append(label, text);
+    box.appendChild(item);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearChat(){
+  chatState.messages = [];
+  renderChat();
+  $('chatResult').textContent = 'Conversation cleared.';
+}
+
+function handleChatKey(event){
+  if(event.key === 'Enter' && !event.shiftKey){
+    event.preventDefault();
+    sendChat();
+  }
+}
+
+async function sendChat(){
+  const experiment = $('chatExperiment').value.trim();
+  const input = $('chatInput').value.trim();
+  if(!experiment) return alert('Enter the language-model experiment name.');
+  if(!input) return;
+  chatState.messages.push({role:'user', content:input});
+  $('chatInput').value = '';
+  renderChat();
+  $('chatResult').textContent = 'Generating…';
+  try {
+    const data = await api('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({experiment, messages:chatState.messages, max_new_tokens:160, temperature:0.8})
+    });
+    const answer = (data.text || '').trim();
+    chatState.messages.push({role:'assistant', content:answer || '(The model returned an empty response.)'});
+    renderChat();
+    $('chatResult').textContent = `Checkpoint epoch: ${data.epoch ?? 'latest'}`;
+  } catch(e) {
+    chatState.messages.pop();
+    renderChat();
+    $('chatResult').textContent = e.message;
+  }
 }
 
 async function runAI(){
