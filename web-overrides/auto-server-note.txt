@@ -1,0 +1,1 @@
+Automatic two-step workflow backend integration point. The UI calls /api/auto/plan, /api/auto/build, and /api/auto/status/:id. Implement these routes in the active export_runtime.py before enabling this UI. Do not expose provider API keys; automatic planning should use the existing local model and training/export pipeline.
