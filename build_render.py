@@ -46,13 +46,16 @@ required = DEST / "requirements-web.txt"
 if not required.is_file():
     raise RuntimeError("Trainer extraction failed: trainer/requirements-web.txt not found")
 
-# The existing Render service is configured for Python rather than Docker.
-# Install the local dataset model runtime here so the key-free dataset creator
-# works on that already-deployed service too.
+# The existing Render service is Python, not Docker. Install a CPU-only
+# PyTorch build first so Render does not pull several GB of unused CUDA wheels.
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "--no-cache-dir",
-    "torch>=2.4,<3", "transformers>=4.56,<5", "safetensors>=0.5,<1",
-    "huggingface_hub>=0.30,<2",
+    "--index-url", "https://download.pytorch.org/whl/cpu",
+    "torch>=2.4,<3",
+])
+subprocess.check_call([
+    sys.executable, "-m", "pip", "install", "--no-cache-dir",
+    "transformers>=4.56,<5", "safetensors>=0.5,<1", "huggingface_hub>=0.30,<2",
 ])
 LOCAL_MODEL.mkdir(parents=True, exist_ok=True)
 from huggingface_hub import snapshot_download
