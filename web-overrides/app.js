@@ -57,15 +57,13 @@ async function generateDataset(bottom=false){
   const result = $(`datasetAIResult${suffix}`);
   if(!topic) return alert('Describe what the AI-generated dataset should teach.');
   if(!columns) return alert('Enter the dataset columns.');
+  if(!Number.isInteger(rows) || rows < 5 || rows > 5000) return alert('Dataset rows must be a whole number from 5 to 5000.');
   result.textContent = 'Generating dataset with the local model…';
   try {
     const payload = {topic, columns, rows, format};
-    let data;
-    try {
-      data = await api('/api/ai/dataset/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    } catch(e) {
-      data = await api('/api/ai/dataset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    }
+    // Both endpoints are aliases. Do not retry generation on the second alias,
+    // because a lost response could otherwise create two expensive datasets.
+    const data = await api('/api/ai/dataset/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     await uploadGeneratedDataset(data, result);
     const other = bottom ? '' : 'Bottom';
     if($(`datasetTopic${other}`)) $(`datasetTopic${other}`).value = topic;
@@ -150,6 +148,6 @@ async function runAI(){
 
 async function downloadModel(){
   const experiment=$('downloadExperiment').value.trim(); if(!experiment) return alert('Enter the experiment name.');
-  try { const key=$('apiKey').value.trim(), headers=key?{'X-API-Key':key}:{}; const response=await fetch('/api/experiments/'+encodeURIComponent(experiment)+'/download',{headers}); if(!response.ok){const text=await response.text();let data;try{data=JSON.parse(text);}catch{data={detail:text};}throw new Error(data.detail||`HTTP ${response.status}`);} const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url;a.download=`${experiment}-trained-model.zip`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);$('downloadResult').textContent='Download started successfully.'; }
+  try { const key=$('apiKey').value.trim(), headers=key?{'X-API-Key':key}:{}; const response=await fetch('/api/experiments/'+encodeURIComponent(experiment)+'/download',{headers}); if(!response.ok){const text=await response.text();let data;try{data=JSON.parse(text);}catch{data={detail:text};}throw new Error(data.detail||`HTTP ${response.status}`);} const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url;a.download=`${experiment}-trained-model.zip`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);$('downloadResult').textContent='Download started successfully.'; }
   catch(e){ $('downloadResult').textContent=e.message; }
 }
