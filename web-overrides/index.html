@@ -19,7 +19,7 @@
   <main>
     <section class="card dataset-ai">
       <h2>✨ Create a dataset with AI</h2>
-      <p class="sub">Generate synthetic training data with the Gemini AI service configured securely on the server. No API key is needed here.</p>
+      <p class="sub">Generate synthetic training data locally on the server. No Gemini or provider API key is needed.</p>
       <input id="datasetTopic" type="text" maxlength="1000" placeholder="What should the dataset teach? e.g. customer support questions and helpful answers">
       <input id="datasetColumns" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated (e.g. text,label)">
       <div class="row">
@@ -30,7 +30,7 @@
           <option value="txt">TXT — language-model/chat training</option>
         </select>
       </div>
-      <button onclick="generateDataset()">Generate dataset with Gemini</button>
+      <button onclick="generateDataset()">Generate dataset locally</button>
       <pre id="datasetAIResult">No AI dataset created yet.</pre>
     </section>
 
@@ -125,7 +125,7 @@
 
     <section class="card dataset-ai bottom-dataset">
       <h2>✨ Create another dataset with AI</h2>
-      <p class="sub">Generate another dataset using the Gemini AI service configured on the server. No API key is needed here.</p>
+      <p class="sub">Generate another dataset locally. No Gemini or provider API key is needed.</p>
       <input id="datasetTopicBottom" type="text" maxlength="1000" placeholder="Dataset topic or training objective">
       <input id="datasetColumnsBottom" type="text" maxlength="2000" value="text,label" placeholder="Columns, comma separated">
       <div class="row">
@@ -136,7 +136,7 @@
           <option value="txt">TXT — language-model/chat training</option>
         </select>
       </div>
-      <button onclick="generateDataset(true)">Generate dataset with Gemini</button>
+      <button onclick="generateDataset(true)">Generate dataset locally</button>
       <pre id="datasetAIResultBottom">No AI dataset created yet.</pre>
     </section>
   </main>
