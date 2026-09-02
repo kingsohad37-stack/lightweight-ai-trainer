@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: lightweight-ai-trainer
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: TRAINER_DATA_DIR
+        value: /var/data
+      - key: MAX_UPLOAD_BYTES
+        value: "26214400"
+      - key: MAX_ACTIVE_JOBS
+        value: "1"
+      - key: MAX_EPOCHS
+        value: "200"
+      - key: MAX_BATCH_SIZE
+        value: "512"
+      - key: MAX_HIDDEN_UNITS
+        value: "512"
+      - key: TRAINER_API_KEY
+        sync: false
+      - key: TRAINER_ALLOWED_ORIGINS
+        sync: false

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lightweight AI Trainer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="eyebrow">LIGHTWEIGHT AI TRAINER</div>
+      <h1>Train real ML models from your browser.</h1>
+      <p class="sub">Upload a dataset, create a training plan, and monitor the job.</p>
+    </div>
+    <span id="health" class="pill">Checking API…</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Connection</h2>
+      <p class="sub">Only needed when the server has an API key configured.</p>
+      <input id="apiKey" type="password" autocomplete="off" placeholder="API key (optional)">
+    </section>
+
+    <section class="card">
+      <h2>1. Upload dataset</h2>
+      <div class="upload">
+        <input id="dataset" type="file" accept=".csv,.tsv,.json,.jsonl,.txt">
+        <button onclick="uploadDataset()">Upload</button>
+      </div>
+      <pre id="uploadResult">No dataset uploaded.</pre>
+    </section>
+
+    <section class="card">
+      <h2>2. Describe what you want to train</h2>
+      <textarea id="prompt" placeholder="Example: Train a model to predict the target column using the available features."></textarea>
+      <button onclick="makePlan()">Create AI training plan</button>
+      <pre id="planResult">No plan yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>3. Start training</h2>
+      <textarea id="config" placeholder='Paste the generated training config JSON here'></textarea>
+      <button onclick="startTraining()">Start training</button>
+      <div id="jobBox" class="job hidden">
+        <div class="jobhead"><b id="jobStatus">Queued</b><span id="jobId"></span></div>
+        <pre id="jobResult"></pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Predict</h2>
+      <input id="predictExperiment" type="text" placeholder="Experiment name (e.g. experiment)">
+      <textarea id="predictRecords" placeholder='Paste input records as a JSON array, e.g. [{"col1": 1, "col2": "a"}]'></textarea>
+      <button onclick="runPrediction()">Predict</button>
+      <pre id="predictResult">No prediction yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>5. Generate text</h2>
+      <input id="generateExperiment" type="text" placeholder="Language-model experiment name">
+      <textarea id="generatePrompt" placeholder="Prompt text"></textarea>
+      <button onclick="runGeneration()">Generate</button>
+      <pre id="generateResult">Train a tiny transformer to generate text.</pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

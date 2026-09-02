@@ -1,0 +1,10 @@
+The quick brown fox jumps over the lazy dog.
+Machine learning models learn patterns from data.
+Small language models can run on modest hardware.
+Training a neural network involves forward and backward passes.
+Gradient descent updates parameters to minimize loss.
+A checkpoint saves the model state so training can resume.
+Tokenization converts text into numerical sequences.
+Attention lets a model weigh different parts of the input.
+Local AI tools can respect memory and compute limits.
+This is a tiny corpus meant only for experimentation.

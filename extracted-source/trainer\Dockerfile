@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements-web.txt .
+RUN pip install --no-cache-dir -r requirements-web.txt \
+    && useradd --create-home --uid 10001 trainer \
+    && mkdir -p /var/data \
+    && chown -R trainer:trainer /var/data
+
+# The code imports the trainer package, so it must live beneath /app/trainer.
+COPY . /app/trainer
+RUN chown -R trainer:trainer /app/trainer
+
+ENV TRAINER_DATA_DIR=/var/data
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+USER trainer
+CMD ["sh", "-c", "uvicorn trainer.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
