@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -11,7 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import server
 
-MODEL_DIR = os.environ.get("LOCAL_MODEL_DIR", "/opt/local-model")
+MODEL_DIR = os.environ.get("LOCAL_MODEL_DIR", str(Path(__file__).resolve().parent / ".local-model"))
 _MODEL = None
 _TOKENIZER = None
 
