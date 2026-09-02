@@ -40,6 +40,47 @@ async function uploadDataset(){
   } catch(e) { $('uploadResult').textContent = e.message; }
 }
 
+async function uploadGeneratedDataset(data, resultElement){
+  const blob = new Blob([data.content], {type: data.media_type || 'text/plain;charset=utf-8'});
+  const file = new File([blob], data.filename, {type: data.media_type || 'text/plain'});
+  const fd = new FormData();
+  fd.append('file', file);
+  resultElement.textContent = `Generated ${data.rows} rows. Uploading to the trainer…`;
+  const uploaded = await api('/api/datasets/upload',{method:'POST',body:fd});
+  window.datasetId = uploaded.dataset_id;
+  const analysis = await api('/api/datasets/analyze?dataset_id='+encodeURIComponent(uploaded.dataset_id),{method:'POST'});
+  resultElement.textContent = `Generated ${data.rows} rows and loaded them into the trainer.\n\nDATASET\n${JSON.stringify(uploaded,null,2)}\n\nANALYSIS\n${JSON.stringify(analysis.analysis,null,2)}`;
+  $('uploadResult').textContent = resultElement.textContent;
+  $('planResult').textContent = 'AI dataset ready. Describe your training goal above, then create the training plan.';
+}
+
+async function generateDataset(bottom=false){
+  const suffix = bottom ? 'Bottom' : '';
+  const topic = $(`datasetTopic${suffix}`).value.trim();
+  const columns = $(`datasetColumns${suffix}`).value.trim();
+  const rows = Number($(`datasetRows${suffix}`).value || 100);
+  const format = $(`datasetFormat${suffix}`).value;
+  const apiKey = $(`datasetGeminiKey${suffix}`).value.trim();
+  const result = $(`datasetAIResult${suffix}`);
+  if(!topic) return alert('Describe what the AI-generated dataset should teach.');
+  if(!columns) return alert('Enter the dataset columns.');
+  result.textContent = 'Generating dataset with Gemini…';
+  try {
+    const data = await api('/api/ai/dataset',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({topic, columns, rows, format, api_key:apiKey || null})
+    });
+    await uploadGeneratedDataset(data, result);
+    // Keep the two creator panels in sync without copying the secret key.
+    const other = bottom ? '' : 'Bottom';
+    if($(`datasetTopic${other}`)) $(`datasetTopic${other}`).value = topic;
+    if($(`datasetColumns${other}`)) $(`datasetColumns${other}`).value = columns;
+    if($(`datasetRows${other}`)) $(`datasetRows${other}`).value = rows;
+    if($(`datasetFormat${other}`)) $(`datasetFormat${other}`).value = format;
+  } catch(e) { result.textContent = e.message; }
+}
+
 async function makePlan(){
   const prompt = $('prompt').value.trim();
   if(!prompt) return alert('Describe the training task first.');
