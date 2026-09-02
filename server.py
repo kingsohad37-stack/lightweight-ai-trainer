@@ -17,17 +17,12 @@ from trainer.api import main as original
 
 app = original.app
 
-# Remove the original root static mount temporarily so our API routes stay
-ahead of it in Starlette's route order. Re-add it after the extensions.
 _root_mount = None
 for route in list(app.routes):
     if getattr(route, "path", None) == "/" and hasattr(route, "app"):
         _root_mount = route
         app.router.routes.remove(route)
 
-# Replace the original /api/generate route with the web-safe implementation
-# below. Classification/regression models are intentionally rejected here:
-# text generation is only valid for language-model checkpoints.
 for route in list(app.routes):
     if getattr(route, "path", None) == "/api/generate" and "POST" in getattr(route, "methods", set()):
         app.router.routes.remove(route)
@@ -38,8 +33,7 @@ def _post_json(url: str, headers: dict, payload: dict, timeout: int = 90) -> dic
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8")
-            return json.loads(raw)
+            return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:2000]
         raise HTTPException(status_code=502, detail=f"AI provider returned HTTP {exc.code}: {detail}") from exc
@@ -60,18 +54,14 @@ def _provider_config(request: AIGenerateRequest):
     provider = request.provider.lower().strip()
     if provider == "auto":
         provider = os.environ.get("AI_PROVIDER", "gemini").lower().strip()
-
-    key = request.api_key
-    if not key:
-        key = {
-            "gemini": os.environ.get("GEMINI_API_KEY"),
-            "groq": os.environ.get("GROQ_API_KEY"),
-            "openai": os.environ.get("OPENAI_API_KEY"),
-            "custom": os.environ.get("AI_API_KEY"),
-        }.get(provider)
+    key = request.api_key or {
+        "gemini": os.environ.get("GEMINI_API_KEY"),
+        "groq": os.environ.get("GROQ_API_KEY"),
+        "openai": os.environ.get("OPENAI_API_KEY"),
+        "custom": os.environ.get("AI_API_KEY"),
+    }.get(provider)
     if not key:
         raise HTTPException(400, f"No API key configured for provider '{provider}'. Add it in the UI or Render environment variables.")
-
     defaults = {
         "gemini": os.environ.get("GEMINI_MODEL", "gemini-3.7-flash"),
         "groq": os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
@@ -84,23 +74,14 @@ def _provider_config(request: AIGenerateRequest):
 @original.app.post("/api/ai/generate", dependencies=[Depends(original.require_api_key)])
 def ai_generate(request: AIGenerateRequest):
     provider, key, model = _provider_config(request)
-
     if provider == "gemini":
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": request.prompt}]}],
-            "generationConfig": {"temperature": request.temperature, "maxOutputTokens": request.max_tokens},
-        }
+        payload = {"contents": [{"role": "user", "parts": [{"text": request.prompt}]}], "generationConfig": {"temperature": request.temperature, "maxOutputTokens": request.max_tokens}}
         data = _post_json(url, {"Content-Type": "application/json", "x-goog-api-key": key}, payload)
-        text = ""
-        for candidate in data.get("candidates", []):
-            for part in candidate.get("content", {}).get("parts", []):
-                if isinstance(part.get("text"), str):
-                    text += part["text"]
+        text = "".join(part.get("text", "") for c in data.get("candidates", []) for part in c.get("content", {}).get("parts", []) if isinstance(part.get("text"), str))
         if not text:
             raise HTTPException(502, "Gemini returned no text content.")
         return {"provider": provider, "model": model, "text": text}
-
     if provider == "groq":
         url = "https://api.groq.com/openai/v1/chat/completions"
     elif provider == "openai":
@@ -111,13 +92,7 @@ def ai_generate(request: AIGenerateRequest):
             raise HTTPException(400, "AI_BASE_URL is required for the custom OpenAI-compatible provider.")
     else:
         raise HTTPException(400, "Unsupported provider. Use gemini, groq, openai, custom, or auto.")
-
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": request.prompt}],
-        "temperature": request.temperature,
-        "max_tokens": request.max_tokens,
-    }
+    payload = {"model": model, "messages": [{"role": "user", "content": request.prompt}], "temperature": request.temperature, "max_tokens": request.max_tokens}
     data = _post_json(url, {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}, payload)
     try:
         text = data["choices"][0]["message"]["content"]
@@ -153,13 +128,6 @@ def _extract_json_array(text: str) -> list[dict]:
 @original.app.post("/api/ai/dataset", dependencies=[Depends(original.require_api_key)])
 @original.app.post("/api/ai/dataset/generate", dependencies=[Depends(original.require_api_key)])
 def generate_dataset(request: DatasetGenerateRequest):
-    """Generate a training-ready dataset with the dedicated dataset Gemini key.
-
-    DATASET_GEMINI_API_KEY is intentionally separate from all training and
-    general AI-provider credentials. A request-supplied key remains supported
-    for users who want to bring their own Gemini key for dataset generation.
-    Neither key is persisted by this endpoint.
-    """
     key = request.api_key or os.environ.get("DATASET_GEMINI_API_KEY")
     if not key:
         raise HTTPException(400, "A Gemini API key is required for dataset generation. Add DATASET_GEMINI_API_KEY on Render or enter your own key.")
@@ -167,101 +135,119 @@ def generate_dataset(request: DatasetGenerateRequest):
     columns = [c.strip() for c in request.columns.split(",") if c.strip()]
     if not columns:
         raise HTTPException(400, "Enter at least one column name.")
-
-    prompt = f"""Create exactly {request.rows} high-quality synthetic training records about: {request.topic}\n\nColumns: {', '.join(columns)}\n\nReturn ONLY a JSON array of objects. Every object must contain exactly these columns. Keep values useful for machine-learning training, varied, realistic, internally consistent, and free of markdown. Do not add explanations outside the JSON array."""
+    prompt = f"Create exactly {request.rows} high-quality synthetic training records about: {request.topic}\n\nColumns: {', '.join(columns)}\n\nReturn ONLY a JSON array of objects. Every object must contain exactly these columns. Keep values useful for machine-learning training, varied, realistic, internally consistent, and free of markdown. Do not add explanations outside the JSON array."
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": min(32768, max(2048, request.rows * len(columns) * 40)),
-            "responseMimeType": "application/json",
-            "responseSchema": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {column: {"type": "STRING"} for column in columns},
-                    "required": columns,
-                },
-            },
-        },
-    }
+    payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.7, "maxOutputTokens": min(32768, max(2048, request.rows * len(columns) * 40)), "responseMimeType": "application/json", "responseSchema": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {column: {"type": "STRING"} for column in columns}, "required": columns}}}}
     data = _post_json(url, {"Content-Type": "application/json", "x-goog-api-key": key}, payload, timeout=180)
-    raw = ""
-    for candidate in data.get("candidates", []):
-        for part in candidate.get("content", {}).get("parts", []):
-            if isinstance(part.get("text"), str):
-                raw += part["text"]
+    raw = "".join(part.get("text", "") for c in data.get("candidates", []) for part in c.get("content", {}).get("parts", []) if isinstance(part.get("text"), str))
     if not raw:
         raise HTTPException(502, "Gemini returned no dataset content.")
     try:
         records = _extract_json_array(raw)
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(502, f"Could not validate Gemini's dataset: {exc}") from exc
-
     records = [{column: str(row.get(column, "")) for column in columns} for row in records[:request.rows]]
     if len(records) < 5:
         raise HTTPException(502, "Gemini returned too few valid records. Try again with a smaller dataset size.")
-
     if request.format == "jsonl":
         content = "\n".join(json.dumps(row, ensure_ascii=False) for row in records) + "\n"
-        filename = "ai-generated-dataset.jsonl"
-        media_type = "application/jsonl"
+        filename, media_type = "ai-generated-dataset.jsonl", "application/jsonl"
     elif request.format == "txt":
-        lines = []
-        for row in records:
-            lines.append("\n".join(f"{column}: {row[column]}" for column in columns))
-            lines.append("")
-        content = "\n".join(lines).strip() + "\n"
-        filename = "ai-generated-dataset.txt"
-        media_type = "text/plain"
+        content = "\n\n".join("\n".join(f"{column}: {row[column]}" for column in columns) for row in records) + "\n"
+        filename, media_type = "ai-generated-dataset.txt", "text/plain"
     else:
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(records)
+        writer.writeheader(); writer.writerows(records)
         content = output.getvalue()
-        filename = "ai-generated-dataset.csv"
-        media_type = "text/csv"
-
+        filename, media_type = "ai-generated-dataset.csv", "text/csv"
     return {"filename": filename, "format": request.format, "rows": len(records), "columns": columns, "content": content, "media_type": media_type}
 
 
 @original.app.post("/api/generate", dependencies=[Depends(original.require_api_key)])
 def generate_text(request: original.GenerateRequest):
-    """Generate a continuation from a genuine tiny-transformer LM checkpoint."""
     from trainer.algorithms.transformer import TinyTransformer
     from trainer.tokenizers.char_tokenizer import CharTokenizer
     from trainer.training.checkpoint import CheckpointManager
-
     try:
         name = original._safe_name(request.experiment)
         manager = CheckpointManager(str(original.MODEL_ROOT), name)
         checkpoint = manager.load_epoch(request.epoch) if request.epoch else manager.load_latest()
         if not checkpoint:
             raise HTTPException(404, "No trained checkpoint found for this experiment.")
-
         metadata = checkpoint.get("metadata", {})
         algorithm = metadata.get("algorithm")
         if algorithm != "tiny_transformer":
             raise HTTPException(400, f"Experiment '{name}' is a {algorithm or 'non-text'} model. Step 5 requires a language-model training run (task=language_modeling, algorithm=tiny_transformer). Your classification/regression model is still valid for prediction.")
-
         transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
         tokenizer_state = checkpoint.get("preprocessor_state")
         if not transformer_state or not tokenizer_state:
             raise HTTPException(400, "This language-model checkpoint is incomplete: transformer/tokenizer state is missing.")
-
         model = TinyTransformer.from_state(transformer_state)
         tokenizer = CharTokenizer.from_state(tokenizer_state)
         prompt_ids = tokenizer.encode(request.prompt)
         generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
-        continuation_ids = generated_ids[len(prompt_ids):]
-        text = tokenizer.decode(continuation_ids)
-        return {"experiment": name, "text": text, "epoch": metadata.get("epoch")}
+        return {"experiment": name, "text": tokenizer.decode(generated_ids[len(prompt_ids):]), "epoch": metadata.get("epoch")}
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(500, f"Generation failed: {exc}") from exc
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(min_length=1, max_length=20)
+    content: str = Field(min_length=1, max_length=12_000)
+
+
+class ChatRequest(BaseModel):
+    experiment: str = Field(min_length=1, max_length=120)
+    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+    max_new_tokens: int = Field(default=160, ge=1, le=1024)
+    temperature: float = Field(default=0.8, gt=0, le=2)
+    epoch: Optional[int] = Field(default=None, ge=0)
+
+
+def _chat_prompt(messages: list[ChatMessage]) -> str:
+    parts = []
+    for message in messages:
+        role = message.role.lower().strip()
+        label = "System" if role == "system" else "Assistant" if role == "assistant" else "User"
+        parts.append(f"{label}: {message.content.strip()}")
+    parts.append("Assistant:")
+    return "\n".join(parts)
+
+
+@original.app.post("/api/chat", dependencies=[Depends(original.require_api_key)])
+def chat(request: ChatRequest):
+    from trainer.algorithms.transformer import TinyTransformer
+    from trainer.tokenizers.char_tokenizer import CharTokenizer
+    from trainer.training.checkpoint import CheckpointManager
+    try:
+        name = original._safe_name(request.experiment)
+        manager = CheckpointManager(str(original.MODEL_ROOT), name)
+        checkpoint = manager.load_epoch(request.epoch) if request.epoch else manager.load_latest()
+        if not checkpoint:
+            raise HTTPException(404, "No trained checkpoint found for this experiment.")
+        metadata = checkpoint.get("metadata", {})
+        if metadata.get("algorithm") != "tiny_transformer":
+            raise HTTPException(400, f"Experiment '{name}' is not a language model. Train it with task=language_modeling first.")
+        transformer_state = checkpoint.get("model_state", {}).get("transformer_state")
+        tokenizer_state = checkpoint.get("preprocessor_state")
+        if not transformer_state or not tokenizer_state:
+            raise HTTPException(400, "This language-model checkpoint is incomplete: transformer/tokenizer state is missing.")
+        model = TinyTransformer.from_state(transformer_state)
+        tokenizer = CharTokenizer.from_state(tokenizer_state)
+        prompt = _chat_prompt(request.messages)
+        prompt_ids = tokenizer.encode(prompt)
+        generated_ids = model.generate(prompt_ids, request.max_new_tokens, request.temperature)
+        text = tokenizer.decode(generated_ids[len(prompt_ids):])
+        for marker in ("\nUser:", "\nSystem:", "\nAssistant:"):
+            text = text.split(marker, 1)[0]
+        return {"experiment": name, "text": text.strip(), "messages": [m.model_dump() for m in request.messages], "epoch": metadata.get("epoch")}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"Chat generation failed: {exc}") from exc
 
 
 if _root_mount is not None:
